@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	hello "github.com/agilefoxHQ/go-function-template"
+	template "github.com/agilefoxHQ/go-function-template"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/funcframework"
 )
@@ -15,7 +15,7 @@ func main() {
 	if err := funcframework.RegisterHTTPFunctionContext(
 		ctx,
 		"/",
-		hello.SomeFunction,
+		template.SomeFunction,
 	); err != nil {
 		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
 	}
