@@ -1,0 +1,67 @@
+name: Production Deployment
+on:
+    push:
+        tags:
+            - v*
+env:
+    CGO_ENABLED: 0
+    GO111MODULE: on
+    GOPRIVATE: "github.com/agilefoxHQ/*"
+    GONOPROXY: "github.com/agilefoxHQ/*"
+    GONOSUMDB: "github.com/agilefoxHQ/*"
+    PROJECT_ID: ${{ secrets.PROD_GCP_PROJECT }}
+    REGION: europe-west1
+    ACCESS_TOKEN_USR: ${{ secrets.RIZ_GH_ACCESS_TOKEN_USR }}
+    ACCESS_TOKEN_PWD: ${{ secrets.RIZ_GH_ACCESS_TOKEN_PWD }}
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout 🌧
+                uses: actions/checkout@v2
+
+            -   name: Install golang
+                uses: actions/setup-go@v2
+                with:
+                    go-version: 1.16.x
+
+            -   name: Configure git for private modules
+                run: git config --global url."https://${{ env.ACCESS_TOKEN_USR }}:${{ env.ACCESS_TOKEN_PWD }}@github.com".insteadOf "https://github.com"
+
+            -   name: Run tests
+                run: |-
+                    go test -cover ./...
+                env:
+                    ACCESS_TOKEN_USR: ${{ env.ACCESS_TOKEN_USR }}
+                    ACCESS_TOKEN_PWD: ${{ env.ACCESS_TOKEN_PWD }}
+
+            -   name: Get short version
+                id: vars
+                run: echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+
+            -   name: Print version
+                run: echo ${{ steps.vars.outputs.sha_short }}
+
+            -   name: Vendoring mode on
+                run: go mod vendor
+
+            -   name: Setup Cloud SDK
+                uses: google-github-actions/setup-gcloud@v0.2.0
+                with:
+                    project_id: ${{ env.PROJECT_ID }}
+                    # encoded as a Base64 string (eg. cat my-key.json | base64 on macOS)
+                    service_account_key: ${{ secrets.PROD_GCP_RUN_DEPLOYER }}
+                    export_default_credentials: true  # Set to true to authenticate the Cloud Run action
+
+            -   name: Deploy to GCP Functions
+                # Read the deployment documentation to understand the various flags used: https://cloud.google.com/functions/docs/deploying
+                # https://cloud.google.com/functions/docs/deploying/filesystem
+                # https://cloud.google.com/functions/docs/concepts/events-triggers
+                run: gcloud functions deploy <function name> \
+                --entry-point <function to call> \
+                --trigger-event <name of the event trigger> \
+                --trigger-resource ${{ env.PROJECT_ID }} \
+                --region europe-west1 \
+                --retry \
+                --runtime go116 \
+                --set-env-vars GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}

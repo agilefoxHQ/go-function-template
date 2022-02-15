@@ -1,0 +1,26 @@
+### Go ###
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Built files in the bin directory
+/build/
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# IDE generated files
+.vscode
+.idea
+
+# Env variables for this environment. Should ideally be set by CI
+.env.yaml
+
+### Go Patch ###
+vendor/
