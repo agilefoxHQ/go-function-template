@@ -2,54 +2,66 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
+	"log"
 	"os"
 	"os/signal"
-	"time"
+	"syscall"
 
 	"github.com/rs/zerolog"
 
 	"github.com/agilefoxHQ/go-function-template/config"
-	"github.com/agilefoxHQ/go-function-template/handlers"
-	"github.com/agilefoxHQ/go-function-template/store"
 )
 
 var (
-	c       config.Configuration
-	logger  zerolog.Logger
-	st      *store.Store
-	handler *http.ServeMux
+	conf   config.Configuration
+	logger zerolog.Logger
 )
 
-// init is used to initialise the package to optimise for hot and cold restarts.
-// With all the hate around init in go, I think this use case is the one where init really shines.
 func init() {
-	c = config.Load()
-	var err error
+	log.SetFlags(0)
+	conf = config.Load()
+
+	//ctx := context.Background()
+
 	logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
-	ctx, cancel := createContext(c.Timeout)
-	defer cancel()
-	// gracefully close the store on os.Interrupt
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	st, err = store.LoadStore(ctx, c, sig, &logger)
-	if err != nil {
-		logger.Fatal().Msgf("could not instantiate store: %v", err)
+
+	if conf.Env != "development" {
+		// Service level logging using cloud logging client. This client initializes with the right labels, resource
+		// types and revision for cloud run deployed oldHandler
+		//logger = zerolog.New(loggingWriter).Level(zerolog.InfoLevel)
 	}
-	handler = handlers.NewHandler(st, &logger)
 }
 
+func serve(ctx context.Context) (err error) {
+	// load the store and start services
+	return
+}
+
+// main is maintained as a separate command package. It bootstraps the service.
+// No other package should include the main package. Also, main should not use the external `services` directly.
 func main() {
-	logger.Info().Msgf("\n%s listening on port :%s", c.FunctionName, c.Port)
-	logger.Fatal().Err(http.ListenAndServe(fmt.Sprintf(":%s", c.Port), handler))
-}
+	// gracefully teardown the app on SIGINT / SIGTERM. For this we create a channel to listen for these signals.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-// Use context.Background() because the underlying container will persist across invocations on the GCP serverless infra
-// The function runtime comes with its own timeout, but I would like to gracefully handle store shutdowns,
-// if any by using my own timeout and listening to context cancellations and SIG_INT signals
-func createContext(svcTimeout time.Duration) (context.Context, context.CancelFunc) {
-	d := time.Now().Add(svcTimeout)
-	ctx, cancel := context.WithDeadline(context.Background(), d)
-	return ctx, cancel
+	// create a cancellable context - this context is what will control the server and store tear downs
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		// wait for the signal in a go routine
+		oscall := <-sig
+		logger.Info().Msgf("system call:%+v", oscall)
+		// cancel the context when you receive this signal
+		cancel()
+	}()
+
+	// Run serve with this cancellable context
+	// all the application start logic can now be extracted away in serve, away from the main function
+	// note to self:
+	//	* the httpServer.ListenAndServe method unblocks immediately when httpServer.Shutdown is called
+	//	* never return from the main function until you are actually ready to quit
+	//	* an alternate approach would be to use synchronization primitives (wait groups, channels)
+	if err := serve(ctx); err != nil {
+		logger.Error().Err(err).Msg("failed to serve")
+	}
 }
